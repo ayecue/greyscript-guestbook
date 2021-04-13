@@ -1,0 +1,176 @@
+#import Argv from library/get-param;
+argDefinitions = []
+
+argDefinitions.push((new Argv.Arg).constructor("h", "help", Argv.ArgType.FLAG, "Print help"))
+
+helpBlock = []
+
+helpBlock.push("client-server CLI")
+helpBlock.push("Example: <b>client-server route method requestParams...</b>")
+helpBlock.push("")
+
+for argDefinition in argDefinitions
+	helpBlock.push(argDefinition.toString())
+end for
+
+help = helpBlock.join(NEW_LINE_OPERATOR)
+
+argv = (new Argv).constructor(argDefinitions, help)
+
+argv.parse()
+
+if (argv.getWithKey("help") == true) then
+	exit(help)
+end if
+
+route = argv.get(0, true)
+method = argv.get(1, true)
+requestParams = argv.unlisted[3:]
+
+random = function(min, max)
+	return floor((rnd * max) + min)
+end function
+
+generateMessageId = function()
+	index = 0
+	max = 5
+	output = ""
+	while index < max
+		output = output + random(0,200)
+		index = index + 1
+	end while
+	return output
+end function
+
+render = function(lines)
+	websiteFile = get_shell.host_computer.File("/Public/htdocs/website.html")
+	if (websiteFile == null) then httpError(HttpStatus.INTERNAL_SERVER_ERROR)
+	newWebsiteContent = ["<ul>"]
+	for line in lines
+		messageIndex = line.indexOf(";")
+		messageId = line[:messageIndex]
+		if (messageId == "") then continue;
+		usernameIndex = line.indexOf(";", messageIndex)
+		username = line[messageIndex + 1:usernameIndex]
+		if (username == "") then continue;
+		message = line[usernameIndex + 1:]
+		newWebsiteContent.push("<li>")
+		newWebsiteContent.push("<span class=""user"">" + messageId + " - "+ username + "</span>")
+		newWebsiteContent.push("<span class=""message"">" + message + "</span>")
+		newWebsiteContent.push("</li>")
+	end for
+	newWebsiteContent.push("</ul>")
+	if (not messageFile.has_permission("w")) then httpError(HttpStatus.PERMISSION_DENIED)
+	messageFile.set_content(lines.join(NEW_LINE_OPERATOR))
+	if (not websiteFile.has_permission("r")) then httpError(HttpStatus.PERMISSION_DENIED)
+	websiteContent = websiteFile.get_content
+	websiteLines = websiteContent.split(NEW_LINE_OPERATOR)
+	websiteLineIndex = 0
+	dataStartIndex = null
+	dataEndIndex = null
+	limit = 1000
+	while websiteLineIndex < limit
+		currentWebsiteLine = websiteLines[websiteLineIndex]
+		if (dataStartIndex == null and currentWebsiteLine.indexOf("<div>") != null) then dataStartIndex = websiteLineIndex
+		if (dataEndIndex == null and dataStartIndex != null and currentWebsiteLine.indexOf("</div>") != null) then dataEndIndex = websiteLineIndex + 1 
+		if (dataEndIndex != null) then break
+		websiteLineIndex = websiteLineIndex + 1
+	end while
+	if (dataStartIndex == null) then httpError(HttpStatus.INTERNAL_SERVER_ERROR)
+	if (dataEndIndex == null) then httpError(HttpStatus.INTERNAL_SERVER_ERROR)
+	websiteContent = websiteLines[:dataStartIndex] + ["<div>"] + newWebsiteContent + ["</div>"] + websiteLines[dataEndIndex:]
+	websiteContent = websiteContent.join(NEW_LINE_OPERATOR)
+	if (not websiteFile.has_permission("w")) then httpError(HttpStatus.PERMISSION_DENIED)
+	websiteFile.set_content(websiteContent)
+end function
+
+HttpStatus = {}
+
+HttpStatus.NOT_FOUND = 404
+HttpStatus.BAD_REQUEST = 400
+HttpStatus.CREATED = 201
+HttpStatus.OK = 200
+HttpStatus.NO_CONTENT = 204
+HttpStatus.INTERNAL_SERVER_ERROR = 500
+HttpStatus.PERMISSION_DENIED = 403
+
+HttpMethod = {}
+
+HttpMethod.GET = "GET"
+HttpMethod.POST = "POST"
+HttpMethod.DELETE = "DELETE"
+
+httpError = function(statusCode)
+	exit("Error: " + statusCode)
+end function
+
+API = {}
+
+API.createRoute = function(r)
+	if (not self.hasIndex(r)) then self[r] = {}
+	return self[r]
+end function
+
+API.createRoute("/healthcheck")[HttpMethod.GET] = function(params)
+	print("All okay")
+end function
+
+API.createRoute("/messages")[HttpMethod.POST] = function(requestParams)
+	user = requestParams[0]
+	if (user == null) then httpError(HttpStatus.BAD_REQUEST)
+	message = requestParams[1]
+	if (message == null) then httpError(HttpStatus.BAD_REQUEST)
+	parsedMessage = message.replace("<" + "br" + ">","%NEW_LINE%").replace("<", "").replace(">", "").replace("%NEW_LINE%","<" + "br" + ">")	
+	messageFile = get_shell.host_computer.File("/Public/htdocs/messages.txt")
+	if (messageFile == null) then
+		if (not get_shell.host_computer.File("/Public/htdocs").has_permission("w")) then httpError(HttpStatus.PERMISSION_DENIED)
+		get_shell.host_computer.touch("/Public/htdocs", "messages.txt")
+		messageFile = get_shell.host_computer.File("/Public/htdocs/messages.txt")
+	end if
+	if (not messageFile.has_permission("r")) then httpError(HttpStatus.PERMISSION_DENIED)
+	content = messageFile.get_content
+	lines = []
+	if (content.len != 0) then
+		lines = content.split(NEW_LINE_OPERATOR)
+	end if
+	lines.push(generateMessageId() + ";" + user + ";" + parsedMessage)
+	if (not messageFile.has_permission("w")) then httpError(HttpStatus.PERMISSION_DENIED)
+	messageFile.set_content(lines.join(NEW_LINE_OPERATOR))
+	render(lines)
+	exit(HttpStatus.CREATED)
+end function
+
+API.createRoute("/messages")[HttpMethod.DELETE] = function(requestParams)
+	requestMessageId = requestParams[0]
+	if (requestMessageId == null) then httpError(HttpStatus.BAD_REQUEST)
+	messageFile = get_shell.host_computer.File("/Public/htdocs/messages.txt")
+	if (messageFile == null) then
+		if (not get_shell.host_computer.File("/Public/htdocs").has_permission("w")) then httpError(HttpStatus.PERMISSION_DENIED)
+		get_shell.host_computer.touch("/Public/htdocs", "messages.txt")
+		messageFile = get_shell.host_computer.File("/Public/htdocs/messages.txt")
+	end if
+	if (not messageFile.has_permission("r")) then httpError(HttpStatus.PERMISSION_DENIED)
+	content = messageFile.get_content
+	lines = []
+	if (content.len != 0) then
+		lines = content.split(NEW_LINE_OPERATOR)
+	end if
+	newLines = []
+	for line in lines
+		messageIndex = line.indexOf(";")
+		messageId = line[:messageIndex]
+		if (messageId == "") then continue;
+		if (requestMessageId == messageId) then continue;
+		newLines.push(line)
+	end for
+	if (not messageFile.has_permission("w")) then httpError(HttpStatus.PERMISSION_DENIED)
+	messageFile.set_content(newLines.join(NEW_LINE_OPERATOR))
+	render(newLines)
+	exit(HttpStatus.NO_CONTENT)
+end function
+
+if (API.hasIndex(route) and API[route].hasIndex(method)) then
+	API[route][method](requestParams)
+else
+	httpError(HttpStatus.NOT_FOUND)
+end if

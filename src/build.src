@@ -1,0 +1,24 @@
+shell = get_shell
+
+projectPath = #envar PROJECT_PATH;
+binFolder = #envar BIN_PATH;
+
+args = [projectPath + "/client-local.src", "--env-file", projectPath + "/local.conf", "--no-output"]
+shell.launch("/usr/bin/compile", args.join(" "))
+
+args = [projectPath + "/client-server.src", "--no-output"]
+shell.launch("/usr/bin/compile", args.join(" "))
+
+ip = #envar IP;
+user = #envar USER;
+password = #envar PASSWORD;
+
+startup = []
+startup.push("@upload " + binFolder + "/client-server /home/clientuser/")
+startup.push("/bin/chmod o+x /home/clientuser/client-server")
+startup.push("@upload " + projectPath + "/website.html /Public/htdocs/")
+startup.push("/bin/chmod -R o+wr /Public")
+startup.push("exit")
+
+args = [user + "@" + password, ip, "--startup", "'" + startup.join(",") + "'"]
+shell.launch("/usr/bin/rlaunch", args.join(" "))

@@ -1,0 +1,55 @@
+#import Argv from library/get-param;
+
+argDefinitions = []
+
+argDefinitions.push((new Argv.Arg).constructor("h", "help", Argv.ArgType.FLAG, "Print help"))
+
+helpBlock = []
+
+helpBlock.push("client-local CLI")
+helpBlock.push("Example: <b>client-local route method requestParams...</b>")
+helpBlock.push("")
+
+for argDefinition in argDefinitions
+	helpBlock.push(argDefinition.toString())
+end for
+
+help = helpBlock.join(NEW_LINE_OPERATOR)
+
+argv = (new Argv).constructor(argDefinitions, help)
+
+argv.parse()
+
+if (argv.getWithKey("help") == true) then
+	exit(help)
+end if
+
+route = argv.get(0, true)
+method = argv.get(1, true).upper
+requestParams = argv.unlisted[1:]
+
+ip = #envar IP;
+port = #envar PORT;.to_int
+user = #envar USER;
+password = #envar PASSWORD;
+
+connect = function()
+	rshell = get_shell.connect_service(ip, port, user, password)
+	if (rshell == null) then exit("Failed to connect to " + ip)
+	return rshell
+end function
+
+rshell = connect()
+parsedParams = []
+
+for requestParam in requestParams
+	parsed = requestParam.split(" ")
+	if (parsed.len == 1) then 
+		parsedParams.push(parsed[0])
+		continue
+	end if
+	parsedParams.push("'" + parsed.join(" ") + "'")
+end for
+
+args = [route, method] + parsedParams
+rshell.launch("/home/clientuser/client-server", args.join(" "))
